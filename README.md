@@ -34,6 +34,9 @@ Once done, Paste the Code into Arduino IDE.
 https://arduino.esp8266.com/stable/package_esp8266com_index.json
 ```
 
+- You also need to add _UniversalTelegramBot_ library.
+> Go to Sketch -> Include Library -> Manage Libraries -> Search for `UniversalTelegramBot` and install it.
+
 - Make sure you have selected the correct board in the Arduino IDE.
 
 - Once finalised, upload the code to the ESP8266 NodeMCU, Press the `FLASH` Button if required.
