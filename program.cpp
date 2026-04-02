@@ -1,168 +1,182 @@
 #include <ESP8266WiFi.h>
-
 #include <WiFiClientSecure.h>
-
 #include <UniversalTelegramBot.h>
-
 #include <DHT.h>
 
 #define DHTPIN D1
-
 #define DHTTYPE DHT11
 
 DHT dht(DHTPIN, DHTTYPE);
 
-// Initialize WiFi connection
+// --- Wi-Fi (replace with your network) ---
+char ssid[] = "NAME OF WIFI";
+char password[] = "WIFI PASSWORD";
 
-char ssid[] = "NAME OF WIFI"; // your network SSID (name)
-char password[] = "WIFI PASSWORD"; // your network password
-
-// Initialize Telegram BOT
-
-#define BOTtoken "BOTTOKEN" // your telegram bot token
+// --- Telegram ---
+// Chat ID: https://t.me/chatidx_bot
+static const char *kTelegramChatId = "YOUR CHAT ID";
+static const char *kBotToken = "BOTTOKEN";
 
 WiFiClientSecure client;
+UniversalTelegramBot bot(kBotToken, client);
 
-UniversalTelegramBot bot(BOTtoken, client);
+static const unsigned long kBotPollMs = 1000;
+static const unsigned long kWiFiConnectTimeoutMs = 60000;
 
-//Checks for new messages every 1 second.
+static unsigned long lastBotPoll = 0;
 
-int botRequestDelay = 1000;
+static bool commandIs(const String &text, const char *cmd) {
+  if (!text.length()) {
+    return false;
+  }
+  if (!text.startsWith(cmd)) {
+    return false;
+  }
+  const size_t n = strlen(cmd);
+  if (text.length() == n) {
+    return true;
+  }
+  // Telegram desktop/mobile often sends "/start@YourBot"
+  return text.charAt(n) == '@';
+}
 
-unsigned long lastTimeBotRan;
+static void sendSensorReadings(const String &chatId) {
+  const float h = dht.readHumidity();
+  const float t = dht.readTemperature();
+  if (isnan(h) || isnan(t)) {
+    bot.sendMessage(chatId, "Sensor read failed. Check wiring and try again.", "");
+    return;
+  }
+  String msg = "Temperature: ";
+  msg += String(t, 1);
+  msg += " °C\nHumidity: ";
+  msg += String(h, 1);
+  msg += " %\n\nBuilt by @mcnaveen";
+  bot.sendMessage(chatId, msg, "");
+}
 
 void handleNewMessages(int numNewMessages) {
-
-  Serial.println("handleNewMessages");
-
-  Serial.println(String(numNewMessages));
-
   for (int i = 0; i < numNewMessages; i++) {
+    const String chatId = String(bot.messages[i].chat_id);
+    const String text = bot.messages[i].text;
+    const String fromName = bot.messages[i].from_name;
 
-    String chat_id = String(bot.messages[i].chat_id);
+    const bool authorized = chatId == kTelegramChatId;
 
-    String text = bot.messages[i].text;
-
-    String from_name = bot.messages[i].from_name;
-
-    // Your Chat ID get it from here: https://t.me/chatidx_bot
-
-    if (chat_id == "YOUR CHAT ID") {
-
-      if (text == "/temperature") {
-
-        int t = dht.readTemperature();
-
-        String temp = "Temperature : ";
-
-        temp += int(t);
-
-        temp += "°C\n\nBuilt by @mcnaveen";
-
-        Serial.println(from_name);
-
-        bot.sendMessage(chat_id, temp, "");
-
-      }
-
-      if (text == "/humidity") {
-
-        int h = dht.readHumidity();
-
-        String temp = "Humidity: ";
-
-        temp += int(h);
-
-        temp += "%\nBuilt by @mcnaveen";
-
-        bot.sendMessage(chat_id, temp, "");
-
-      }
-
-    } else {
-      bot.sendMessage(chat_id, "Unauthorized User", "");
+    if (!authorized) {
+      bot.sendMessage(chatId, "Unauthorized user.", "");
+      continue;
     }
 
-    if (text == "/start") {
-
-      String welcome = "Welcome  " + from_name + "\n\nThis bot is Built by @mcnaveen to find room temperature\n\n Choose your option\n";
-
-      welcome += "/temperature : Get Temperature\n";
-
-      welcome += "/humidity : Get Humiditiy\n";
-
-      bot.sendMessage(chat_id, welcome, "Markdown");
-
+    if (commandIs(text, "/start")) {
+      String welcome = "Welcome, " + fromName + "!\n\n";
+      welcome += "Room monitor by @mcnaveen\n\n";
+      welcome += "/temperature — temperature (°C)\n";
+      welcome += "/humidity — humidity (%)\n";
+      welcome += "/status — temperature and humidity\n";
+      bot.sendMessage(chatId, welcome, "");
+      continue;
     }
 
+    if (commandIs(text, "/temperature")) {
+      const float t = dht.readTemperature();
+      if (isnan(t)) {
+        bot.sendMessage(chatId, "Temperature read failed.", "");
+        continue;
+      }
+      String msg = "Temperature: ";
+      msg += String(t, 1);
+      msg += " °C\n\nBuilt by @mcnaveen";
+      bot.sendMessage(chatId, msg, "");
+      continue;
+    }
+
+    if (commandIs(text, "/humidity")) {
+      const float h = dht.readHumidity();
+      if (isnan(h)) {
+        bot.sendMessage(chatId, "Humidity read failed.", "");
+        continue;
+      }
+      String msg = "Humidity: ";
+      msg += String(h, 1);
+      msg += " %\n\nBuilt by @mcnaveen";
+      bot.sendMessage(chatId, msg, "");
+      continue;
+    }
+
+    if (commandIs(text, "/status")) {
+      sendSensorReadings(chatId);
+      continue;
+    }
+
+    bot.sendMessage(
+        chatId,
+        "Unknown command. Send /start for a list.",
+        "");
+  }
+}
+
+static bool connectWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+
+  const unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - start > kWiFiConnectTimeoutMs) {
+      Serial.println("\nWi-Fi connection timed out.");
+      return false;
+    }
+    delay(500);
+    Serial.print(".");
   }
 
+  Serial.println("\nWi-Fi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  return true;
 }
 
 void setup() {
-
   Serial.begin(115200);
-
   dht.begin();
 
   client.setInsecure();
+  client.setBufferSizes(2048, 512);
 
-  // WiFo Connected
-
-  WiFi.mode(WIFI_STA);
-
-  WiFi.disconnect();
-
-  delay(100);
-
-  // Attempt to connect to WiFi network:
-
-  Serial.print("Connecting Wifi: ");
-
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-
-    Serial.print(".");
-
-    delay(500);
-
+  if (!connectWifi()) {
+    Serial.println("Restarting in 10 s to retry Wi-Fi...");
+    delay(10000);
+    ESP.restart();
   }
 
-  Serial.println("");
-
-  Serial.println("WiFi connected");
-
-  Serial.print("IP address: ");
-
-  Serial.println(WiFi.localIP());
-
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  delay(1000);
 }
 
 void loop() {
-
-  int t = dht.readTemperature();
-
-  int h = dht.readHumidity();
-
-  if (millis() > lastTimeBotRan + botRequestDelay) {
-
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-
-    while (numNewMessages) {
-
-      Serial.println("Got Response");
-
-      handleNewMessages(numNewMessages);
-
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi lost, reconnecting...");
+    if (!connectWifi()) {
+      delay(5000);
+      return;
     }
-
-    lastTimeBotRan = millis();
-
+    delay(1000);
   }
 
+  if (static_cast<long>(millis() - lastBotPoll) < static_cast<long>(kBotPollMs)) {
+    return;
+  }
+  lastBotPoll = millis();
+
+  int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  while (numNewMessages) {
+    Serial.println("Telegram: handling messages");
+    handleNewMessages(numNewMessages);
+    numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  }
 }
