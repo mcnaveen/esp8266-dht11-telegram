@@ -2,6 +2,7 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 #include <DHT.h>
+#include <stddef.h>
 
 #define DHTPIN D1
 #define DHTTYPE DHT11
@@ -13,8 +14,14 @@ char ssid[] = "NAME OF WIFI";
 char password[] = "WIFI PASSWORD";
 
 // --- Telegram ---
-// Chat ID: https://t.me/chatidx_bot
-static const char *kTelegramChatId = "YOUR CHAT ID";
+// Chat IDs: https://t.me/chatidx_bot — add every user/group that may use the bot.
+static const char *kTelegramChatIds[] = {
+    "YOUR CHAT ID",
+    // "SECOND CHAT ID",
+};
+static const size_t kTelegramChatIdCount =
+    sizeof(kTelegramChatIds) / sizeof(kTelegramChatIds[0]);
+
 static const char *kBotToken = "BOTTOKEN";
 
 WiFiClientSecure client;
@@ -24,6 +31,15 @@ static const unsigned long kBotPollMs = 1000;
 static const unsigned long kWiFiConnectTimeoutMs = 60000;
 
 static unsigned long lastBotPoll = 0;
+
+static bool isAuthorizedChat(const String &chatId) {
+  for (size_t i = 0; i < kTelegramChatIdCount; i++) {
+    if (chatId == kTelegramChatIds[i]) {
+      return true;
+    }
+  }
+  return false;
+}
 
 static bool commandIs(const String &text, const char *cmd) {
   if (!text.length()) {
@@ -61,7 +77,7 @@ void handleNewMessages(int numNewMessages) {
     const String text = bot.messages[i].text;
     const String fromName = bot.messages[i].from_name;
 
-    const bool authorized = chatId == kTelegramChatId;
+    const bool authorized = isAuthorizedChat(chatId);
 
     if (!authorized) {
       bot.sendMessage(chatId, "Unauthorized user.", "");
@@ -143,6 +159,11 @@ static bool connectWifi() {
 
 void setup() {
   Serial.begin(115200);
+  // After upload/reset the host UART may miss the first bytes; brief wait + banner helps.
+  delay(200);
+  Serial.println();
+  Serial.println("--- ESP8266 DHT11 Telegram: setup ---");
+
   dht.begin();
 
   client.setInsecure();
