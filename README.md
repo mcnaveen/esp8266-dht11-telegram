@@ -1,58 +1,113 @@
-## Get Room Temperature and Humidity using ESP8266, DHT11 and Telegram Bot
+## Room temperature and humidity with ESP8266, DHT11, and a Telegram bot
 
-### Requirements:
+Read DHT11 values on a NodeMCU and control replies from Telegram using `/` commands. Only the configured chat ID can use the bot.
+
+### Requirements
+
 - ESP8266 NodeMCU
-- DHT11 Sensor
-- Three Jumper Wires
+- DHT11 sensor
+- Three jumper wires
 - USB cable
 
-### Connection Diagram:
+### Libraries (Arduino IDE)
+
+- **ESP8266 board support** — add this JSON in *File → Preferences → Additional boards manager URLs*, then install the ESP8266 package via *Tools → Board → Boards Manager*:
+
+  `https://arduino.esp8266.com/stable/package_esp8266com_index.json`
+
+- **DHT sensor library** — *Sketch → Include Library → Manage Libraries* → search `DHT sensor library` (Adafruit), install it (pulls in **Adafruit Unified Sensor** if needed).
+
+- **UniversalTelegramBot** — same Library Manager, search `UniversalTelegramBot` and install.
+
+### Wiring
+
 ![Diagram](./images/diagram.png)
 
-### Connections:
-- Connect `+ (VCC)` to 3V in NodeMCU
-- Connect `- (GND)` to GND in NodeMCU
-- Connect `OUT (DHT11 data pin)` to D1 in NodeMCU
+| DHT11 | NodeMCU |
+|-------|---------|
+| VCC   | 3V3     |
+| GND   | GND     |
+| DATA  | D1      |
 
-### Code Instructions:
+### Configure the sketch
 
-Open the `program.cpp` file and modify the following lines:
+Open `program.cpp` and set:
 
-- In **Line 17** Replace `NAME OF WIFI` with your WIFI SSID
+| Setting | Variable | What to put |
+|---------|----------|----------------|
+| Wi-Fi name | `ssid` | Your network SSID |
+| Wi-Fi password | `password` | Your network password |
+| Bot token | `kBotToken` | From [@BotFather](https://t.me/BotFather) (`/newbot` or token for an existing bot) |
+| Allowed user | `kTelegramChatId` | Your numeric chat ID (e.g. from [@chatidx_bot](https://t.me/chatidx_bot)) |
 
-- In **Line 18** Replace `PASSWORD OF WIFI` with your WIFI Password
+Paste the sketch into the Arduino IDE (or open this file as your `.ino` main tab), select the correct **board** and **port**, then upload. Open the **Serial Monitor** at **115200** baud and reset the board; you should see Wi-Fi connect, then Telegram polling in the log when messages arrive.
 
-- In **Line 22** Replace `BOT TOKEN` with your Telegram Bot Token (Get Bot Token from BotFather)
+### Built-in `/` commands
 
-- In **Line 50** Replace `CHAT ID` with your Telegram Chat ID (Get Chat ID from here: https://t.me/chatidx_bot)
+These are handled in firmware for the authorized chat only:
 
-Once done, Paste the Code into Arduino IDE.
+| Command | Description |
+|---------|-------------|
+| `/start` | Short help and list of commands |
+| `/temperature` | Current temperature (°C) |
+| `/humidity` | Current relative humidity (%) |
+| `/status` | Temperature and humidity together |
 
-- Make sure that you have added the following libraries:
+Telegram may send commands as `/command` or `/command@YourBotName`; the code accepts both.
 
-```
-https://arduino.esp8266.com/stable/package_esp8266com_index.json
-```
+### Optional: command menu in Telegram (BotFather)
 
-- You also need to add _UniversalTelegramBot_ library.
-> Go to Sketch -> Include Library -> Manage Libraries -> Search for `UniversalTelegramBot` and install it.
+So users see commands in the chat attachment menu:
 
-- Make sure you have selected the correct board in the Arduino IDE.
+1. Open [@BotFather](https://t.me/BotFather), send `/mybots`, choose your bot.
+2. Tap **Edit Bot** → **Edit Commands**.
+3. Paste a list like (one command per line: `command` — description):
 
-- Once finalised, upload the code to the ESP8266 NodeMCU, Press the `FLASH` Button if required.
+   ```
+   start - Show help and command list
+   temperature - Get temperature in °C
+   humidity - Get humidity in %
+   status - Get temperature and humidity
+   ```
 
-- Then Open the Serial Monitor, Press `RST` Button and wait for the ESP8266 to connect to the WiFi.
+4. Save. Clients will show these after a refresh; behavior is still defined by your ESP8266 code.
 
-- Now start the telegram bot and test it.
+### How to add a new `/` command in code
 
-### Sample Response:
+1. **Pick a name** — use a single word after `/`, e.g. `/uptime`.
 
-- Here is the sample response from the ESP8266 in Telegram:
+2. **Handle it in `handleNewMessages`** — after the existing `commandIs` checks, add a block like:
+
+   ```cpp
+   if (commandIs(text, "/uptime")) {
+     unsigned long sec = millis() / 1000;
+     bot.sendMessage(chatId, "Uptime: " + String(sec) + " s", "");
+     continue;
+   }
+   ```
+
+   Always end with `continue` so you do not fall through to the “Unknown command” reply.
+
+3. **Reuse `commandIs`** — it already supports `/cmd` and `/cmd@BotUsername`. Do not use `text == "/foo"` only, or mobile clients may break.
+
+4. **Update BotFather** (optional) — add the new line under **Edit Commands** so it appears in the menu.
+
+5. **Update `/start` text** — in the `welcome` string inside the `/start` handler, add a line describing the new command so `/start` stays accurate.
+
+### Sample response
+
+Example Telegram reply (your UI may differ):
 
 ![Sample Response](./images/response.png)
 
-### Pull Request:
-- We are looking for any kind of bug fixes or new features.
+### Troubleshooting
 
-### License:
-- MIT License
+- **Telegram “status 0” or no API connection** — ensure Wi-Fi has internet access, `kBotToken` is correct, and BearSSL buffer settings in `setup()` stay as in the repo (`setInsecure()` + `setBufferSizes`).
+
+### Contributing
+
+Pull requests for bug fixes or features are welcome.
+
+### License
+
+MIT License
